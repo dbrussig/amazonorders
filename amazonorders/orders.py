@@ -5,6 +5,7 @@ import asyncio
 import concurrent.futures
 import datetime
 import logging
+import re
 from typing import Any, Callable, List, Optional
 
 from bs4 import Tag
@@ -152,9 +153,11 @@ class AmazonOrders:
             if not order_tags:
                 order_count_tag = util.select_one(page_response.parsed,
                                                   self.config.selectors.ORDER_HISTORY_COUNT_SELECTOR)
-                (order_count, _) = order_count_tag.text.split(" ", 2) if order_count_tag else ("0", None)
+                order_count_text = order_count_tag.text if order_count_tag else "0"
+                count_matches = re.findall(r"\d+", order_count_text)
+                order_count = int(count_matches[-1]) if count_matches else 0
 
-                if order_count_tag and int(order_count) <= current_index:
+                if order_count_tag and order_count <= current_index:
                     break
                 else:
                     raise AmazonOrdersError("Could not parse Order history. Check if Amazon changed the HTML.")
