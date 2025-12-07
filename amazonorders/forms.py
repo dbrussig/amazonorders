@@ -3,13 +3,10 @@ __license__ = "MIT"
 
 import re
 from abc import ABC
-from io import BytesIO
-from typing import Any, Dict, Optional, TYPE_CHECKING, Union
+from typing import Any, Dict, Optional, TYPE_CHECKING
 from urllib.parse import urlparse
 
 import pyotp
-from PIL import Image
-from amazoncaptcha import AmazonCaptcha
 from bs4 import Tag
 from requests import Response
 
@@ -25,10 +22,6 @@ if TYPE_CHECKING:
 class AuthForm(ABC):
     """
     The base class of an authentication ``<form>`` that can be submitted.
-
-    The base implementation will attempt to auto-solve Captcha. If this fails, it will
-    use the default image view to show the Captcha prompt, and it will also pass the
-    image URL to :func:`~amazonorders.session.IODefault.prompt` as ``img_url``.
     """
 
     def __init__(self,
@@ -123,27 +116,6 @@ class AuthForm(ABC):
         self.amazon_session = None
         self.form = None
         self.data = None
-
-    def _solve_captcha(self,
-                       url: str) -> Union[str, Any]:
-        if not self.amazon_session:
-            raise AmazonOrdersError(
-                "Call AuthForm.select_form() first."
-            )  # pragma: no cover
-
-        captcha_response = AmazonCaptcha.fromlink(url).solve()
-        if not captcha_response or captcha_response.lower() == "not solved":
-            img_response = self.amazon_session.session.get(url)
-            img = Image.open(BytesIO(img_response.content))
-            img.show()
-
-            self.amazon_session.io.echo("Info: The Captcha couldn't be auto-solved.")
-
-            captcha_response = self.amazon_session.io.prompt("Enter the characters shown in the image",
-                                                             img_url=url)
-            self.amazon_session.io.echo("")
-
-        return captcha_response
 
     def _get_form_action(self, last_response: Response) -> str:
         if not self.amazon_session or not self.form:
@@ -373,18 +345,21 @@ class MfaForm(AuthForm):
             self.data["deviceId"] = ""
 
 
-class CaptchaForm(AuthForm):
+class LegacyCaptchaForm(AuthForm):
+    """
+    This implementation exists only to support legacy Captcha forms that now contain the field keywords
+    pre-populated within the form (ie. there is no image Captch challenge anymore). Amazon's WAF and other
+    JavaScript-based Captcha are not solvable by this library.
+    """
+
     def __init__(self,
                  config: AmazonOrdersConfig,
                  selector: Optional[str] = None,
-                 error_selector: Optional[str] = None,
-                 solution_attr_key: str = "cvf_captcha_input") -> None:
+                 solution_attr_key: str = "field-keywords") -> None:
         if not selector:
-            selector = config.selectors.CAPTCHA_1_FORM_SELECTOR
-        elif not error_selector:
-            error_selector = config.selectors.CAPTCHA_1_ERROR_SELECTOR
+            selector = config.selectors.CAPTCHA_FORM_SELECTOR
 
-        super().__init__(config, selector, error_selector)
+        super().__init__(config, selector)
 
         self.solution_attr_key = solution_attr_key
 
@@ -400,7 +375,7 @@ class CaptchaForm(AuthForm):
         super().fill_form(additional_attrs)
         if not self.data:
             raise AmazonOrdersError(
-                "CaptchaForm data did not populate, but it's required. "
+                "LegacyCaptchaForm data did not populate, but it's required. "
                 "Check if Amazon changed their Captcha flow, and see "
                 "https://amazon-orders.readthedocs.io/troubleshooting.html#captcha-blocking-login"
             )  # pragma: no cover
@@ -409,27 +384,19 @@ class CaptchaForm(AuthForm):
         form_parent = self.form.find_parent()
         if not form_parent:
             raise AmazonOrdersError(
-                "CaptchaForm parent not found, but it's required. "
+                "LegacyCaptchaForm parent not found, but it's required. "
                 "Check if Amazon changed their Captcha flow, and see "
                 "https://amazon-orders.readthedocs.io/troubleshooting.html#captcha-blocking-login."
             )  # pragma: no cover
 
-        img_tag = form_parent.select_one("img")
         solution_tag = form_parent.select_one(f"input[name='{self.solution_attr_key}']")
 
-        if img_tag:
-            img_url = str(img_tag["src"])
-
-            if not img_url.startswith("http"):
-                img_url = f"{self.config.constants.BASE_URL}{img_url}"
-            solution = self._solve_captcha(img_url)
-        elif solution_tag:
+        if solution_tag:
             solution = str(solution_tag["value"])
         else:
             raise AmazonOrdersError(
-                f"CaptchaForm <img> or <input name='{self.solution_attr_key}']> tags not found, but one is required. "
-                "Check if Amazon changed their Captcha flow, and see "
-                "https://amazon-orders.readthedocs.io/troubleshooting.html#captcha-blocking-login."
+                "A JavaScript-based Captcha has been found. This library cannot solve these challenges. See "
+                "https://amazon-orders.readthedocs.io/troubleshooting.html#captcha-blocking-login for more details."
             )  # pragma: no cover
 
         additional_attrs.update({self.solution_attr_key: solution})

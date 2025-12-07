@@ -52,8 +52,6 @@ class Selectors:
     CAPTCHA_2_FORM_SELECTOR = ["form:has(input[id^='captchacharacters'])", "form[action$='validateCaptcha']"]
     CAPTCHA_OTP_FORM_SELECTOR = "form#verification-code-form"
     DEFAULT_ERROR_TAG_SELECTOR = "div#auth-error-message-box"
-    CAPTCHA_1_ERROR_SELECTOR = "div.cvf-widget-alert"
-    CAPTCHA_2_ERROR_SELECTOR = "div.a-alert-info"
 
     ##########################################################################
     # CSS selectors for pagination
