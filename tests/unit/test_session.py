@@ -23,6 +23,7 @@ class TestSession(UnitTestCase):
     @responses.activate
     def test_login(self):
         # GIVEN
+        self.given_unauthenticated_home_page()
         self.given_login_responses_success()
 
         # WHEN
@@ -35,6 +36,7 @@ class TestSession(UnitTestCase):
     @responses.activate
     def test_login_claim(self):
         # GIVEN
+        self.given_unauthenticated_home_page()
         self.given_login_claim_responses_success()
 
         # WHEN
@@ -42,6 +44,27 @@ class TestSession(UnitTestCase):
 
         # THEN
         self.assertTrue(self.amazon_session.is_authenticated)
+        self.assert_login_responses_success()
+
+    @responses.activate
+    def test_login_bad_index_retries(self):
+        # GIVEN
+        with open(os.path.join(self.RESOURCES_DIR, "auth", "unauth-bad-index.html"), "r", encoding="utf-8") as f:
+            resp1 = responses.add(
+                responses.GET,
+                self.test_config.constants.BASE_URL,
+                body=f.read(),
+                status=200,
+            )
+        self.given_unauthenticated_home_page()
+        self.given_login_claim_responses_success()
+
+        # WHEN
+        self.amazon_session.login()
+
+        # THEN
+        self.assertTrue(self.amazon_session.is_authenticated)
+        self.assertEqual(1, resp1.call_count)
         self.assert_login_responses_success()
 
     @responses.activate
@@ -62,6 +85,7 @@ class TestSession(UnitTestCase):
     @responses.activate
     def test_login_claim_invalid_username(self):
         # GIVEN
+        self.given_unauthenticated_home_page()
         with open(os.path.join(self.RESOURCES_DIR, "auth", "signin-claim-username.html"), "r", encoding="utf-8") as f:
             resp1 = responses.add(
                 responses.GET,
@@ -91,6 +115,7 @@ class TestSession(UnitTestCase):
     @responses.activate
     def test_login_invalid_username(self):
         # GIVEN
+        self.given_unauthenticated_home_page()
         with open(os.path.join(self.RESOURCES_DIR, "auth", "signin.html"), "r", encoding="utf-8") as f:
             resp1 = responses.add(
                 responses.GET,
@@ -121,6 +146,7 @@ class TestSession(UnitTestCase):
     @responses.activate
     def test_login_invalid_password(self):
         # GIVEN
+        self.given_unauthenticated_home_page()
         with open(os.path.join(self.RESOURCES_DIR, "auth", "signin.html"), "r", encoding="utf-8") as f:
             resp1 = responses.add(
                 responses.GET,
@@ -151,6 +177,7 @@ class TestSession(UnitTestCase):
     @patch("builtins.input")
     def test_mfa(self, input_mock):
         # GIVEN
+        self.given_unauthenticated_home_page()
         with open(os.path.join(self.RESOURCES_DIR, "auth", "signin.html"), "r", encoding="utf-8") as f:
             resp1 = responses.add(
                 responses.GET,
@@ -187,6 +214,7 @@ class TestSession(UnitTestCase):
     @patch("builtins.input")
     def test_mfa_2(self, input_mock):
         # GIVEN
+        self.given_unauthenticated_home_page()
         with open(os.path.join(self.RESOURCES_DIR, "auth", "signin.html"), "r", encoding="utf-8") as f:
             resp1 = responses.add(
                 responses.GET,
@@ -196,43 +224,6 @@ class TestSession(UnitTestCase):
             )
         with open(os.path.join(self.RESOURCES_DIR, "auth", "post-signin-mfa-2.html"),
                   "r", encoding="utf-8") as f:
-            resp2 = responses.add(
-                responses.POST,
-                self.test_config.constants.SIGN_IN_URL,
-                body=f.read(),
-                status=200,
-            )
-        with open(os.path.join(self.RESOURCES_DIR, "orders", "order-history-2018-0.html"),
-                  "r", encoding="utf-8") as f:
-            resp3 = responses.add(
-                responses.POST,
-                f"{self.test_config.constants.BASE_URL}/ap/cvf/approval/verifyOtp",
-                body=f.read(),
-                status=200,
-            )
-
-        # WHEN
-        self.amazon_session.login()
-
-        # THEN
-        self.assertTrue(self.amazon_session.is_authenticated)
-        self.assertEqual(1, input_mock.call_count)
-        self.assertEqual(1, resp1.call_count)
-        self.assertEqual(1, resp2.call_count)
-        self.assertEqual(1, resp3.call_count)
-
-    @responses.activate
-    @patch("builtins.input")
-    def test_new_otp(self, input_mock):
-        # GIVEN
-        with open(os.path.join(self.RESOURCES_DIR, "auth", "signin.html"), "r", encoding="utf-8") as f:
-            resp1 = responses.add(
-                responses.GET,
-                self.test_config.constants.SIGN_IN_URL,
-                body=f.read(),
-                status=200,
-            )
-        with open(os.path.join(self.RESOURCES_DIR, "auth", "post-signin-new-otp.html"), "r", encoding="utf-8") as f:
             resp2 = responses.add(
                 responses.POST,
                 self.test_config.constants.SIGN_IN_URL,
@@ -268,6 +259,167 @@ class TestSession(UnitTestCase):
     @responses.activate
     def test_amazon_blocks_auth(self):
         # GIVEN
+        self.given_unauthenticated_home_page()
+        with open(os.path.join(self.RESOURCES_DIR, "auth", "signin.html"), "r", encoding="utf-8") as f:
+            resp1 = responses.add(
+                responses.GET,
+                self.test_config.constants.SIGN_IN_URL,
+                body=f.read(),
+                status=200,
+            )
+        resp2 = responses.add(
+            responses.POST,
+            self.test_config.constants.SIGN_IN_URL,
+            status=503
+        )
+
+        # WHEN
+        with self.assertRaises(AmazonOrdersAuthError) as cm:
+            self.amazon_session.login()
+
+        # THEN
+        self.assertFalse(self.amazon_session.is_authenticated)
+        self.assertEqual(1, resp1.call_count)
+        self.assertEqual(1, resp2.call_count)
+        self.assertIn("The page https://www.amazon.com/ap/signin returned 503. Amazon had an issue on "
+                      "their end, or may be temporarily blocking your requests.", str(cm.exception))
+
+    @responses.activate
+    def test_captcha_1(self):
+        # GIVEN
+        self.given_unauthenticated_home_page()
+        with open(os.path.join(self.RESOURCES_DIR, "auth", "signin.html"), "r", encoding="utf-8") as f:
+            resp1 = responses.add(
+                responses.GET,
+                self.test_config.constants.SIGN_IN_URL,
+                body=f.read(),
+                status=200,
+            )
+        resp2 = responses.add(
+            responses.POST,
+            self.test_config.constants.SIGN_IN_URL,
+            status=302,
+            headers={"Location": f"{self.test_config.constants.BASE_URL}/ap/cvf/request"}
+        )
+        with open(os.path.join(self.RESOURCES_DIR, "auth", "post-signin-captcha-1.html"), "r", encoding="utf-8") as f:
+            resp3 = responses.add(
+                responses.POST,
+                f"{self.test_config.constants.BASE_URL}/ap/cvf/approval/verifyOtp",
+                body=f.read(),
+                status=200,
+            )
+
+        # WHEN
+        self.amazon_session.login()
+
+        # THEN
+        self.assertTrue(self.amazon_session.is_authenticated)
+        self.assertEqual(1, input_mock.call_count)
+        self.assertEqual(1, resp1.call_count)
+        self.assertEqual(1, resp2.call_count)
+        self.assertEqual(1, resp3.call_count)
+
+    @responses.activate
+    @patch("builtins.input")
+    def test_new_otp(self, input_mock):
+        # GIVEN
+        self.given_unauthenticated_home_page()
+        with open(os.path.join(self.RESOURCES_DIR, "auth", "signin.html"), "r", encoding="utf-8") as f:
+            resp1 = responses.add(
+                responses.GET,
+                self.test_config.constants.SIGN_IN_URL,
+                body=f.read(),
+                status=200,
+            )
+        with open(os.path.join(self.RESOURCES_DIR, "auth", "post-signin-new-otp.html"), "r", encoding="utf-8") as f:
+            resp2 = responses.add(
+                responses.POST,
+                self.test_config.constants.SIGN_IN_URL,
+                body=f.read(),
+                status=200,
+            )
+        with open(os.path.join(self.RESOURCES_DIR, "auth", "post-signin-mfa.html"), "r", encoding="utf-8") as f:
+            resp3 = responses.add(
+                responses.GET,
+                "https://images-na.ssl-images-amazon.com/captcha/ddwwidnf/Captcha_gmwackhtzu.jpg",
+                body=f.read(),
+                headers={"Content-Type": "image/jpeg"},
+                status=200,
+            )
+        resp4 = responses.add(
+            responses.GET,
+            f"{self.test_config.constants.BASE_URL}/errors/validateCaptcha",
+            status=302,
+            headers={"Location": f"{self.test_config.constants.BASE_URL}/"},
+            match=[query_string_matcher(
+                "amzn=Ozn2ONrAzGQc1ZETILqvvA%3D%3D&amzn-r=%2Fap%2Fsignin%3Fopenid.pape.max_auth_age%3D900%26"
+                "openid.return_to%3Dhttps%253A%252F%252Fwww.amazon.com%253F%26openid.assoc_handle%3Dusflex%2"
+                "6openid.mode%3Dcheckid_setup%26openid.ns%3Dhttp%253A%252F%252Fspecs.openid.net%252Fauth%252"
+                "F2.0&amzn-pt=AuthenticationPortal&field-keywords=FBJRAC")],
+        )
+        # Successful Captcha redirects us back to the home page, which should restart the auth flow
+        with open(os.path.join(self.RESOURCES_DIR, "index.html"), "r", encoding="utf-8") as f:
+            resp5 = responses.add(
+                responses.GET,
+                f"{self.test_config.constants.BASE_URL}/",
+                body=f.read(),
+                status=200,
+            )
+        self.given_login_responses_success()
+
+        # WHEN
+        self.amazon_session.login()
+
+        # THEN
+        self.assertTrue(self.amazon_session.is_authenticated)
+        self.assertEqual(1, resp1.call_count)
+        self.assertEqual(1, resp2.call_count)
+        self.assertEqual(1, resp3.call_count)
+        self.assertEqual(1, resp4.call_count)
+        self.assertEqual(1, resp5.call_count)
+        self.given_login_responses_success()
+
+    @responses.activate
+    def test_captcha_3(self):
+        # GIVEN
+        self.given_unauthenticated_home_page()
+        with open(os.path.join(self.RESOURCES_DIR, "auth", "signin.html"), "r", encoding="utf-8") as f:
+            resp1 = responses.add(
+                responses.GET,
+                self.test_config.constants.SIGN_IN_URL,
+                body=f.read(),
+                status=200,
+            )
+        with open(os.path.join(self.RESOURCES_DIR, "auth", "post-signin-captcha-3.html"), "r", encoding="utf-8") as f:
+            resp2 = responses.add(
+                responses.POST,
+                self.test_config.constants.SIGN_IN_URL,
+                body=f.read(),
+                status=200,
+            )
+        with open(os.path.join(self.RESOURCES_DIR, "orders", "order-history-2018-0.html"), "r", encoding="utf-8") as f:
+            resp4 = responses.add(
+                responses.POST,
+                self.test_config.constants.SIGN_IN_URL,
+                body=f.read(),
+                status=200,
+            )
+
+        # WHEN
+        self.amazon_session.login()
+
+        # THEN
+        self.assertTrue(self.amazon_session.is_authenticated)
+        self.assertEqual(2, input_mock.call_count)
+        self.assertEqual(1, resp1.call_count)
+        self.assertEqual(1, resp2.call_count)
+        self.assertEqual(1, resp3.call_count)
+        self.assertEqual(1, resp4.call_count)
+
+    @responses.activate
+    def test_amazon_blocks_auth(self):
+        # GIVEN
+        self.given_unauthenticated_home_page()
         with open(os.path.join(self.RESOURCES_DIR, "auth", "signin.html"), "r", encoding="utf-8") as f:
             resp1 = responses.add(
                 responses.GET,
@@ -295,6 +447,7 @@ class TestSession(UnitTestCase):
     @responses.activate
     def test_captcha_loop_retries_exhausted(self):
         # GIVEN
+        self.given_unauthenticated_home_page()
         with open(os.path.join(self.RESOURCES_DIR, "auth", "signin.html"), "r", encoding="utf-8") as f:
             resp1 = responses.add(
                 responses.GET,
@@ -339,8 +492,39 @@ class TestSession(UnitTestCase):
         self.assertIn("Authentication attempts exhausted.", str(cm.exception))
 
     @responses.activate
-    def test_captcha_fields_keywords(self):
+    def test_captcha_fields_keywords_1(self):
         # GIVEN
+        self.given_unauthenticated_home_page("captcha-field-keywords.html")
+        resp1 = responses.add(
+            responses.GET,
+            f"{self.test_config.constants.BASE_URL}/errors/validateCaptcha",
+            status=302,
+            headers={"Location": f"{self.test_config.constants.BASE_URL}/"},
+            match=[query_string_matcher(
+                "amzn=JC7LJGBaJlGTFs1Ao3s3XA%3D%3D&amzn-r=%2F&field-keywords=CJYYPE")],
+        )
+        # Successful Captcha redirects us back to the home page, which should restart the auth flow
+        with open(os.path.join(self.RESOURCES_DIR, "index.html"), "r", encoding="utf-8") as f:
+            resp2 = responses.add(
+                responses.GET,
+                f"{self.test_config.constants.BASE_URL}/",
+                body=f.read(),
+                status=200,
+            )
+        self.given_login_responses_success()
+
+        # WHEN
+        self.amazon_session.login()
+
+        # THEN
+        self.assertTrue(self.amazon_session.is_authenticated)
+        self.assertEqual(1, resp1.call_count)
+        self.assertEqual(1, resp2.call_count)
+
+    @responses.activate
+    def test_captcha_fields_keywords_2(self):
+        # GIVEN
+        self.given_unauthenticated_home_page()
         with open(os.path.join(self.RESOURCES_DIR, "auth", "signin.html"), "r", encoding="utf-8") as f:
             resp1 = responses.add(
                 responses.GET,
@@ -348,7 +532,7 @@ class TestSession(UnitTestCase):
                 body=f.read(),
                 status=200,
             )
-        with open(os.path.join(self.RESOURCES_DIR, "auth", "post-signin-captcha-field-keywords.html"), "r",
+        with open(os.path.join(self.RESOURCES_DIR, "auth", "captcha-field-keywords.html"), "r",
                   encoding="utf-8") as f:
             resp2 = responses.add(
                 responses.POST,
@@ -384,8 +568,48 @@ class TestSession(UnitTestCase):
         self.assertEqual(1, resp4.call_count)
 
     @responses.activate
+    @patch("builtins.input")
+    def test_captcha_otp(self, input_mock):
+        # GIVEN
+        self.given_unauthenticated_home_page()
+        with open(os.path.join(self.RESOURCES_DIR, "auth", "signin.html"), "r", encoding="utf-8") as f:
+            resp1 = responses.add(
+                responses.GET,
+                self.test_config.constants.SIGN_IN_URL,
+                body=f.read(),
+                status=200,
+            )
+        with open(os.path.join(self.RESOURCES_DIR, "auth", "post-signin-captcha-otp.html"),
+                  "r", encoding="utf-8") as f:
+            resp2 = responses.add(
+                responses.POST,
+                self.test_config.constants.SIGN_IN_URL,
+                body=f.read(),
+                status=200,
+            )
+        with open(os.path.join(self.RESOURCES_DIR, "orders", "order-history-2018-0.html"),
+                  "r", encoding="utf-8") as f:
+            resp3 = responses.add(
+                responses.POST,
+                f"{self.test_config.constants.BASE_URL}/ap/cvf/approval/verifyOtp",
+                body=f.read(),
+                status=200,
+            )
+
+        # WHEN
+        self.amazon_session.login()
+
+        # THEN
+        self.assertTrue(self.amazon_session.is_authenticated)
+        self.assertEqual(1, input_mock.call_count)
+        self.assertEqual(1, resp1.call_count)
+        self.assertEqual(1, resp2.call_count)
+        self.assertEqual(1, resp3.call_count)
+
+    @responses.activate
     def test_js_waf_login_blocker(self):
         # GIVEN
+        self.given_unauthenticated_home_page()
         with open(os.path.join(self.RESOURCES_DIR, "auth", "signin.html"), "r", encoding="utf-8") as f:
             resp1 = responses.add(
                 responses.GET,

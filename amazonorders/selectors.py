@@ -31,6 +31,12 @@ class Selectors:
     """
 
     ##########################################################################
+    # CSS selectors for Pages
+    ##########################################################################
+
+    BAD_INDEX_SELECTOR = "html.a-tablet"
+
+    ##########################################################################
     # CSS selectors for AuthForms
     ##########################################################################
 
@@ -42,8 +48,9 @@ class Selectors:
     MFA_DEVICE_SELECT_INPUT_SELECTOR = "input[name='otpDeviceContext']"
     MFA_DEVICE_SELECT_INPUT_SELECTOR_VALUE = "value"
     MFA_FORM_SELECTOR = "form#auth-mfa-form"
-    MFA_OTP_FORM_SELECTOR = "form#verification-code-form"
-    CAPTCHA_FORM_SELECTOR = "form:has(input[name='field-keywords'])"
+    CAPTCHA_1_FORM_SELECTOR = "form.cvf-widget-form-captcha"
+    CAPTCHA_2_FORM_SELECTOR = ["form:has(input[id^='captchacharacters'])", "form[action$='validateCaptcha']"]
+    CAPTCHA_OTP_FORM_SELECTOR = "form#verification-code-form"
     DEFAULT_ERROR_TAG_SELECTOR = "div#auth-error-message-box"
 
     ##########################################################################

@@ -5,6 +5,7 @@ import asyncio
 import concurrent.futures
 import datetime
 import logging
+import re
 from typing import Any, Callable, List, Optional
 
 from bs4 import Tag
@@ -77,14 +78,16 @@ class AmazonOrders:
         return order
 
     def get_order_history(self,
-                          year: int = datetime.date.today().year,
+                          year: Optional[int] = None,
                           start_index: Optional[int] = None,
                           full_details: bool = False,
-                          keep_paging: bool = True) -> List[Order]:
+                          keep_paging: bool = True,
+                          time_filter: Optional[str] = None) -> List[Order]:
         """
-        Get the Amazon Order history for a given year.
+        Get the Amazon Order history for a given time period.
 
-        :param year: The year for which to get history.
+        :param year: The year for which to get history. Ignored if ``time_filter`` is provided.
+            Defaults to the current year if neither ``year`` nor ``time_filter`` is specified.
         :param start_index: The index of the Order from which to start fetching in the history. See
             :attr:`~amazonorders.entity.order.Order.index` to correlate, or if a call to this method previously errored
             out, see ``index`` in the exception's :attr:`~amazonorders.exception.AmazonOrdersError.meta` to continue
@@ -92,18 +95,40 @@ class AmazonOrders:
         :param full_details: Get the full details for each Order in the history. This will execute an additional
             request per Order.
         :param keep_paging: ``False`` if only one page should be fetched.
+        :param time_filter: The time filter to use. Supported values are ``"last30"`` (last 30 days),
+            ``"months-3"`` (past 3 months), or ``"year-YYYY"`` (specific year). If provided, this takes
+            precedence over the ``year`` parameter.
         :return: A list of the requested Orders.
         """
         if not self.amazon_session.is_authenticated:
             raise AmazonOrdersError("Call AmazonSession.login() to authenticate first.")
 
+        if time_filter and year:
+            raise AmazonOrdersError("Only one of 'year' or 'time_filter' may be used at a time.")
+
+        # Determine the filter value to use
+        if time_filter:
+            # Validate time_filter value
+            valid_filters = ["last30", "months-3"]
+            is_year_filter = time_filter.startswith("year-") and time_filter[5:].isdigit()
+            if time_filter not in valid_filters and not is_year_filter:
+                raise AmazonOrdersError(
+                    f"Invalid time_filter '{time_filter}'. "
+                    f"Valid values are 'last30', 'months-3', or 'year-YYYY'."
+                )
+            filter_value = time_filter
+        else:
+            if year is None:
+                year = datetime.date.today().year
+            filter_value = f"year-{year}"
+
         optional_start_index = f"&startIndex={start_index}" if start_index else ""
         next_page: Optional[str] = (
-            "{url}?{query_param}=year-{year}{optional_start_index}"
+            "{url}?{query_param}={filter_value}{optional_start_index}"
         ).format(
             url=self.config.constants.ORDER_HISTORY_URL,
             query_param=self.config.constants.HISTORY_FILTER_QUERY_PARAM,
-            year=year,
+            filter_value=filter_value,
             optional_start_index=optional_start_index
         )
 
@@ -128,9 +153,11 @@ class AmazonOrders:
             if not order_tags:
                 order_count_tag = util.select_one(page_response.parsed,
                                                   self.config.selectors.ORDER_HISTORY_COUNT_SELECTOR)
-                (order_count, _) = order_count_tag.text.split(" ", 2) if order_count_tag else ("0", None)
+                order_count_text = order_count_tag.text if order_count_tag else "0"
+                count_matches = re.findall(r"\d+", order_count_text)
+                order_count = int(count_matches[-1]) if count_matches else 0
 
-                if order_count_tag and int(order_count) <= current_index:
+                if order_count_tag and order_count <= current_index:
                     break
                 else:
                     raise AmazonOrdersError("Could not parse Order history. Check if Amazon changed the HTML.")

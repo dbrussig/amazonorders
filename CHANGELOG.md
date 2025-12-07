@@ -4,7 +4,31 @@ All notable changes to this project will be documented in this file.
 
 This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased](https://github.com/alexdlaird/amazon-orders/compare/4.0.14...HEAD)
+## [Unreleased](https://github.com/alexdlaird/amazon-orders/compare/4.0.18...HEAD)
+
+## [4.0.18](https://github.com/alexdlaird/amazon-orders/compare/4.0.17...4.0.18) - 2025-12-06
+
+### Added
+
+- Order history can now be fetched by `last30` or `months-3` in addition to year-based filtering. Args added to CLI for this functionality are `--last-30-days` and `--last-3-months`.
+
+## [4.0.17](https://github.com/alexdlaird/amazon-orders/compare/4.0.16...4.0.17) - 2025-11-23
+
+### Added
+
+- `warn_on_missing_required_field` to the config file, set to `True`  to log a warning message instead of raising an exception when a required fields are missing.
+
+## [4.0.16](https://github.com/alexdlaird/amazon-orders/compare/4.0.15...4.0.16) - 2025-09-09
+
+### Added
+
+- Stability improvements to auth flow.
+
+## [4.0.15](https://github.com/alexdlaird/amazon-orders/compare/4.0.14...4.0.15) - 2025-09-08
+
+### Added
+
+- Stability improvements to auth flow.
 
 ### Added
 

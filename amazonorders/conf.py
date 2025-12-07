@@ -37,6 +37,10 @@ class AmazonOrdersConfig:
         # Provision default configs
         thread_pool_size = (os.cpu_count() or 1) * 4
         self._data = {
+            # The maximum number of times to retry provisioning initial cookies before failing
+            "max_cookie_attempts": 10,
+            # The number of seconds to wait before retrying to provision initial cookies
+            "cookie_reattempt_wait": 0.5,
             # The maximum number of authentication forms to try before failing
             "max_auth_attempts": 10,
             # The number of seconds to wait before retrying the auth flow
@@ -53,7 +57,9 @@ class AmazonOrdersConfig:
             "thread_pool_size": (os.cpu_count() or 1) * 4,
             "connection_pool_size": thread_pool_size * 2,
             # The maximum number of failed attempts to allow before failing CLI authentication
-            "max_auth_retries": 1
+            "max_auth_retries": 1,
+            # Set ``True`` to log a warning message instead of raising an exception when a required field is missing.
+            "warn_on_missing_required_field": False
         }
 
         with config_file_lock:

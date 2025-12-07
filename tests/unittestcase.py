@@ -34,14 +34,6 @@ class UnitTestCase(TestCase):
             "max_auth_retries": 0
         })
 
-        with open(os.path.join(self.RESOURCES_DIR, "auth", "unauth-index.html"), "r", encoding="utf-8") as f:
-            self.index_response = responses.add(
-                responses.GET,
-                self.test_config.constants.BASE_URL,
-                body=f.read(),
-                status=200,
-            )
-
         if os.path.exists(self.test_cookie_jar_path):
             os.remove(self.test_cookie_jar_path)
 
@@ -56,6 +48,16 @@ class UnitTestCase(TestCase):
             os.environ["AMAZON_PASSWORD"] = self.password
         if self.otp_secret_key:
             os.environ["AMAZON_OTP_SECRET_KEY"] = self.otp_secret_key
+
+    def given_unauthenticated_home_page(self,
+                                        auth_file="unauth-index.html"):
+        with open(os.path.join(self.RESOURCES_DIR, "auth", auth_file), "r", encoding="utf-8") as f:
+            self.index_response = responses.add(
+                responses.GET,
+                self.test_config.constants.BASE_URL,
+                body=f.read(),
+                status=200,
+            )
 
     def given_login_responses_success(self):
         with open(os.path.join(self.RESOURCES_DIR, "auth", "signin.html"), "r", encoding="utf-8") as f:
@@ -195,6 +197,20 @@ class UnitTestCase(TestCase):
                 status=200,
             )
 
+    def given_order_history_exists_for_time_filter(self, time_filter, html_file, start_index=0):
+        with open(os.path.join(self.RESOURCES_DIR, "orders", html_file), "r",
+                  encoding="utf-8") as f:
+            optional_start_index = f"&startIndex={start_index}" if start_index else ""
+            return responses.add(
+                responses.GET,
+                "{url}?timeFilter={time_filter}"
+                "{optional_start_index}".format(url=self.test_config.constants.ORDER_HISTORY_URL,
+                                                time_filter=time_filter,
+                                                optional_start_index=optional_start_index),
+                body=f.read(),
+                status=200,
+            )
+
     def given_any_order_history_exists(self, order_history_html_file):
         with open(os.path.join(self.RESOURCES_DIR, "orders", order_history_html_file), "r",
                   encoding="utf-8") as f:
@@ -224,6 +240,7 @@ class UnitTestCase(TestCase):
             f.write(json.dumps(cookies))
 
     def assert_login_responses_success(self):
+        self.assertEqual(1, self.index_response.call_count)
         self.assertEqual(1, self.signin_response.call_count)
         self.assertEqual(1, self.authenticated_response.call_count)
 
