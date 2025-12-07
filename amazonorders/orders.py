@@ -154,8 +154,8 @@ class AmazonOrders:
                 order_count_tag = util.select_one(page_response.parsed,
                                                   self.config.selectors.ORDER_HISTORY_COUNT_SELECTOR)
                 order_count_text = order_count_tag.text if order_count_tag else "0"
-                count_match = re.search(r"\d+", order_count_text)
-                order_count = int(count_match.group()) if count_match else 0
+                count_matches = re.findall(r"\d+", order_count_text)
+                order_count = int(count_matches[-1]) if count_matches else 0
 
                 if order_count_tag and order_count <= current_index:
                     break
